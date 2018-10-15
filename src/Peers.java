@@ -1,12 +1,18 @@
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.PrintWriter;
 import java.net.*;
 import java.util.ArrayList;
 import java.util.InputMismatchException;
 import java.util.Scanner;
+import java.util.TreeMap;
 
 import com.thetransactioncompany.jsonrpc2.*;
 import com.thetransactioncompany.jsonrpc2.client.*;
+import com.thetransactioncompany.jsonrpc2.server.Dispatcher;
 
 /**
  * 
@@ -18,6 +24,7 @@ import com.thetransactioncompany.jsonrpc2.client.*;
 public class Peers implements Runnable {
 
 	private int guid;
+	private static int requestId;
 	private String serverIPAddress;
 	private int serverPort;
 //	private Socket socket;
@@ -77,14 +84,14 @@ public class Peers implements Runnable {
 		} catch (MalformedURLException e) {
 			System.err.println("MalformedURLException occured");
 		}
-		System.out.println("To: " +serverURL.toString());
+		System.out.println("To: " + serverURL.toString());
 		session = new JSONRPC2Session(serverURL);
 		System.out.println("Connect");
 	}
 
-	private void disconnectFromSocket() {
-		
-	}
+//	private void disconnectFromSocket() {
+//		session.getOptions()
+//	}
 
 	/**
 	 * Join into the network
@@ -96,20 +103,49 @@ public class Peers implements Runnable {
 			connectToSocket();
 			ArrayList<Object> list = new ArrayList<>();
 			list.add(guid);
-			jsonRequest = new JSONRPC2Request("socket", list, 0);
+			list.add(session.getURL().getHost());
+			jsonRequest = new JSONRPC2Request("join", list, requestId++);
 			jsonResponse = null;
 			try {
 				jsonResponse = session.send(jsonRequest);
 			} catch (JSONRPC2SessionException e) {
 				System.err.println(e.getMessage());
 			}
-			
-			System.out.println("jsonResponse.indicatesSuccess():: " + jsonResponse.indicatesSuccess());
+
+			String response = "";
 			if (jsonResponse.indicatesSuccess()) {
-				System.out.println(jsonResponse.getResult());
+				response = (String) jsonResponse.getResult();
+				System.out.println("JSONResponse from server: " + response);
 			} else {
 				System.out.println("Error");
 			}
+
+			if (response.equalsIgnoreCase("Welcome GUID: " + guid)) {
+				System.out.println("GUID: " + guid + " joined along with peers");
+				isNodeOnline = true;
+				
+				list.clear();
+				list.add(this);
+				list.add(guid);
+				jsonRequest = new JSONRPC2Request("getliveNodes", list, requestId++);
+				jsonResponse = null;
+				try {
+					jsonResponse = session.send(jsonRequest);
+				} catch (JSONRPC2SessionException e) {
+					System.err.println(e.getMessage());
+				}
+
+				response = "";
+				if (jsonResponse.indicatesSuccess()) {
+					response = (String) jsonResponse.getResult();
+					System.out.println("JSONResponse from server: " + response);
+				} else {
+					System.out.println("Error");
+				}
+			}
+
+		} else {
+			System.out.println("Network '" + guid + "' already joined ");
 		}
 		System.out.println("Exit Method");
 	}
@@ -153,11 +189,61 @@ public class Peers implements Runnable {
 	/**
 	 * Update the finger table based on the peers activity
 	 */
-	private void constructFingerTable() {
+	public void constructFingerTable(int guid, TreeMap<Integer, InetAddress> hashMap) {
 
 	}
-
+	
 	public void run() {
+
+		try {
+			ServerSocket serverSocket = new ServerSocket(7000);
+			Dispatcher dispatcher = new Dispatcher();
+			dispatcher.register(new PeerHandler.SocketHandler());
+			
+
+			while (true) {
+				Socket socket = serverSocket.accept();
+				PrintWriter outputStream = new PrintWriter(socket.getOutputStream());
+				BufferedReader inputStream = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+				
+				String contentHeader = "Content-Length: ";
+				int contentLength = 0;
+				String post = inputStream.readLine();
+				boolean isPost = post.startsWith("POST");
+				System.out.println("isPost::" + isPost);
+				while (!(post = inputStream.readLine()).equals("")) {
+					if (isPost && post.startsWith(contentHeader)) {
+						contentLength = Integer.parseInt(post.substring(contentHeader.length()));
+					}
+				}
+
+				StringBuilder reqBuilder = new StringBuilder();
+
+				if (isPost) {
+					int c = 0;
+					for (int i = 0; i < contentLength; i++) {
+						c = (char) inputStream.read();
+						reqBuilder.append((char) c);
+					}
+				}
+
+				JSONRPC2Request jsonrpc2Request = JSONRPC2Request.parse(reqBuilder.toString());
+				JSONRPC2Response jsonrpc2Response = dispatcher.process(jsonrpc2Request, null);
+				
+				outputStream.write("HTTP/1.1 200 OK\r\n");
+				outputStream.write("Content-Type: application/json\r\n");
+				outputStream.write("\r\n");
+				outputStream.write(jsonrpc2Response.toJSONString());
+				outputStream.flush();
+				outputStream.close();
+
+				socket.close();
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		} catch (JSONRPC2ParseException e) {
+			e.printStackTrace();
+		}
 
 	}
 
@@ -175,7 +261,4 @@ public class Peers implements Runnable {
 
 		new Peers(Integer.parseInt(args[0]), args[1], 8000);
 	}
-
 }
-
-

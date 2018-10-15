@@ -2,6 +2,8 @@
 //The JSON-RPC 2.0 Base classes that define the 
 //JSON-RPC 2.0 protocol messages
 import com.thetransactioncompany.jsonrpc2.*;
+import com.thetransactioncompany.jsonrpc2.client.JSONRPC2Session;
+import com.thetransactioncompany.jsonrpc2.client.JSONRPC2SessionException;
 //The JSON-RPC 2.0 server framework package
 import com.thetransactioncompany.jsonrpc2.server.*;
 
@@ -13,10 +15,14 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.PrintWriter;
 import java.net.InetAddress;
+import java.net.MalformedURLException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import net.minidev.json.JSONObject;
 
@@ -55,7 +61,6 @@ public class LookupServer {
 	 */
 	private static class Handler extends Thread {
 
-		private static HashMap<Integer, InetAddress> activeNodes;
 		private Socket clientSocket;
 		private PrintWriter outputStream;
 		private BufferedReader inputStream;
@@ -67,8 +72,8 @@ public class LookupServer {
 		 * @param socket
 		 */
 		public Handler(Socket socket) {
-			System.out.println(
-					"New client connected on PORT #: " + socket.getLocalPort() + " :: " + socket.getInetAddress());
+			System.out
+					.println("Client connected on PORT #: " + socket.getLocalPort() + " :: " + socket.getInetAddress());
 
 			try {
 				this.clientSocket = socket;
@@ -92,12 +97,11 @@ public class LookupServer {
 		 */
 		public void run() {
 
-			InetAddress ipAddress = clientSocket.getInetAddress();
 			String contentHeader = "Content-Length: ";
 			int contentLength = 0;
+				
 			try {
-				String post = inputStream.readLine();
-				boolean isPost = post.startsWith("POST");
+				String post = inputStream.readLine();boolean isPost = post.startsWith("POST");
 				System.out.println("isPost::" + isPost);
 				while (!(post = inputStream.readLine()).equals("")) {
 					if (isPost && post.startsWith(contentHeader)) {
@@ -115,19 +119,17 @@ public class LookupServer {
 					}
 				}
 
-				System.out.println(reqBuilder.toString());
-
 				JSONRPC2Request jsonrpc2Request = JSONRPC2Request.parse(reqBuilder.toString());
 				JSONRPC2Response jsonrpc2Response = dispatcher.process(jsonrpc2Request, null);
-				
-				System.out.println("jsonResponse.indicatesSuccess():: " + jsonrpc2Response.indicatesSuccess());
-				System.out.println("jsonResponse.indicatesSuccess():: " + jsonrpc2Response.getResult());
+
 				outputStream.write("HTTP/1.1 200 OK\r\n");
 				outputStream.write("Content-Type: application/json\r\n");
 				outputStream.write("\r\n");
 				outputStream.write(jsonrpc2Response.toJSONString());
 				outputStream.flush();
 				outputStream.close();
+
+				clientSocket.close();
 			} catch (IOException | JSONRPC2ParseException e) {
 				e.printStackTrace();
 			}
@@ -138,29 +140,6 @@ public class LookupServer {
 
 	public static void main(String[] args) {
 		new LookupServer();
-	}
-
-}
-
-class ServerHandler {
-
-	public static class SocketHandler implements RequestHandler {
-
-		@Override
-		public String[] handledRequests() {
-			return new String[] { "socket" };
-		}
-
-		@Override
-		public JSONRPC2Response process(JSONRPC2Request request, MessageContext context) {
-			if (request.getMethod().equalsIgnoreCase("socket")) {
-				ArrayList<Object> params = (ArrayList) request.getParams();
-				return new JSONRPC2Response(params.get(0), request.getID());
-			} else {
-				return new JSONRPC2Response(JSONRPC2Error.METHOD_NOT_FOUND, request.getID());
-			}
-		}
-
 	}
 
 }

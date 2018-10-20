@@ -21,14 +21,14 @@ public class FingerTable {
 		for (int i = 0; i < I_ENTRIES; i++) {
 			int nextLiveNode = 0;
 			boolean flag = false;
-			Integer[] listOfNodes = (Integer[]) activeNodes.keySet().toArray();
+			Object[] listOfNodes = activeNodes.keySet().toArray();
 			int findNode = ((int) (guid + Math.pow(2, i))) % MAX_NODES;
 
 			if (activeNodes.containsKey(findNode)) {
 				nextLiveNode = findNode;
 			} else {
 				for (int j = 0; j < listOfNodes.length; j++) {
-					int id = listOfNodes[j];
+					int id = (int) listOfNodes[j];
 					if (findNode < id) {
 						flag = true;
 						nextLiveNode = id;
@@ -37,7 +37,7 @@ public class FingerTable {
 				}
 
 				if (!flag)
-					nextLiveNode = listOfNodes[0];
+					nextLiveNode = (int) listOfNodes[0];
 			}
 
 			sucessors.put(findNode, nextLiveNode);

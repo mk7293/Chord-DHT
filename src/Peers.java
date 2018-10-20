@@ -7,12 +7,14 @@ import java.io.PrintWriter;
 import java.net.*;
 import java.util.ArrayList;
 import java.util.InputMismatchException;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.TreeMap;
 
 import com.thetransactioncompany.jsonrpc2.*;
 import com.thetransactioncompany.jsonrpc2.client.*;
 import com.thetransactioncompany.jsonrpc2.server.Dispatcher;
+import com.thetransactioncompany.jsonrpc2.util.NamedParamsRetriever;
 
 /**
  * 
@@ -21,18 +23,20 @@ import com.thetransactioncompany.jsonrpc2.server.Dispatcher;
  * @author mk7293
  *
  */
-public class Peers implements Runnable {
+public class Peers extends Thread {
 
 	private int guid;
 	private static int requestId;
 	private String serverIPAddress;
 	private int serverPort;
-//	private Socket socket;
-	private ObjectOutputStream outputStream;
-	private ObjectInputStream inputStream;
+
+	private Thread thread;
+
 	private JSONRPC2Session session;
 	private JSONRPC2Request jsonRequest;
 	private JSONRPC2Response jsonResponse;
+
+	private FingerTable fingerTable;
 	private boolean isNodeOnline = false;
 
 	public Peers(int guid, String ipAddress, int port) {
@@ -40,6 +44,10 @@ public class Peers implements Runnable {
 		this.guid = guid;
 		this.serverIPAddress = ipAddress;
 		this.serverPort = port;
+
+		thread = new Thread(this);
+		thread.start();
+
 		while (true) {
 			Scanner scanner = new Scanner(System.in);
 
@@ -66,7 +74,7 @@ public class Peers implements Runnable {
 				case 5:
 					break;
 				case 6:
-					System.exit(0);
+					fingerTable.printFingerTable();
 					break;
 				}
 
@@ -84,26 +92,19 @@ public class Peers implements Runnable {
 		} catch (MalformedURLException e) {
 			System.err.println("MalformedURLException occured");
 		}
-		System.out.println("To: " + serverURL.toString());
 		session = new JSONRPC2Session(serverURL);
-		System.out.println("Connect");
 	}
-
-//	private void disconnectFromSocket() {
-//		session.getOptions()
-//	}
 
 	/**
 	 * Join into the network
 	 */
 	private void joinNetwork() {
-		System.out.println("INside method");
 		if (!isNodeOnline) {
-			System.out.println("Insider Node");
+
 			connectToSocket();
 			ArrayList<Object> list = new ArrayList<>();
 			list.add(guid);
-			list.add(session.getURL().getHost());
+
 			jsonRequest = new JSONRPC2Request("join", list, requestId++);
 			jsonResponse = null;
 			try {
@@ -113,6 +114,7 @@ public class Peers implements Runnable {
 			}
 
 			String response = "";
+
 			if (jsonResponse.indicatesSuccess()) {
 				response = (String) jsonResponse.getResult();
 				System.out.println("JSONResponse from server: " + response);
@@ -123,31 +125,11 @@ public class Peers implements Runnable {
 			if (response.equalsIgnoreCase("Welcome GUID: " + guid)) {
 				System.out.println("GUID: " + guid + " joined along with peers");
 				isNodeOnline = true;
-				
-				list.clear();
-				list.add(this);
-				list.add(guid);
-				jsonRequest = new JSONRPC2Request("getliveNodes", list, requestId++);
-				jsonResponse = null;
-				try {
-					jsonResponse = session.send(jsonRequest);
-				} catch (JSONRPC2SessionException e) {
-					System.err.println(e.getMessage());
-				}
-
-				response = "";
-				if (jsonResponse.indicatesSuccess()) {
-					response = (String) jsonResponse.getResult();
-					System.out.println("JSONResponse from server: " + response);
-				} else {
-					System.out.println("Error");
-				}
+				System.out.println();
 			}
-
 		} else {
 			System.out.println("Network '" + guid + "' already joined ");
 		}
-		System.out.println("Exit Method");
 	}
 
 	/**
@@ -189,28 +171,58 @@ public class Peers implements Runnable {
 	/**
 	 * Update the finger table based on the peers activity
 	 */
-	public void constructFingerTable(int guid, TreeMap<Integer, InetAddress> hashMap) {
-
+	private void constructFingerTable(TreeMap<Integer, InetAddress> activeNodes) {
+		fingerTable = new FingerTable(guid, activeNodes);
 	}
-	
-	public void run() {
 
+	@SuppressWarnings({ "unchecked", "deprecation" })
+	private JSONRPC2Response processMethods(JSONRPC2Request request) {
+		String response = "";
+
+		switch (request.getMethod()) {
+		case "UpdateFingerTable":
+
+			Map<String, Object> tempMap = request.getNamedParams();
+			TreeMap<Integer, InetAddress> activeNodes = new TreeMap<>();
+
+			for (Map.Entry<String, Object> entry : tempMap.entrySet()) {
+				
+				System.out.println(entry.getValue());
+				
+				try {
+					activeNodes.put(Integer.parseInt(entry.getKey()), InetAddress.getByName(String.valueOf(entry.getValue()).substring(1)));
+				} catch (NumberFormatException | UnknownHostException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+
+			constructFingerTable(activeNodes);
+			response = "Finger Table Constructed";
+		}
+
+		return new JSONRPC2Response(response, request.getID());
+	}
+
+	@Override
+	public void run() {
 		try {
-			ServerSocket serverSocket = new ServerSocket(7000);
-			Dispatcher dispatcher = new Dispatcher();
-			dispatcher.register(new PeerHandler.SocketHandler());
-			
+			ServerSocket serverSocket = new ServerSocket(4000);
+			System.out.println("Server Run Started");
 
 			while (true) {
 				Socket socket = serverSocket.accept();
+				System.out.println("Connected run method:: " + socket.getInetAddress());
 				PrintWriter outputStream = new PrintWriter(socket.getOutputStream());
 				BufferedReader inputStream = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-				
+
+				System.out.println("Waiting for request");
+
 				String contentHeader = "Content-Length: ";
 				int contentLength = 0;
 				String post = inputStream.readLine();
 				boolean isPost = post.startsWith("POST");
-				System.out.println("isPost::" + isPost);
+
 				while (!(post = inputStream.readLine()).equals("")) {
 					if (isPost && post.startsWith(contentHeader)) {
 						contentLength = Integer.parseInt(post.substring(contentHeader.length()));
@@ -227,9 +239,11 @@ public class Peers implements Runnable {
 					}
 				}
 
+				System.out.println(reqBuilder.toString());
+
 				JSONRPC2Request jsonrpc2Request = JSONRPC2Request.parse(reqBuilder.toString());
-				JSONRPC2Response jsonrpc2Response = dispatcher.process(jsonrpc2Request, null);
-				
+				JSONRPC2Response jsonrpc2Response = processMethods(jsonrpc2Request);
+
 				outputStream.write("HTTP/1.1 200 OK\r\n");
 				outputStream.write("Content-Type: application/json\r\n");
 				outputStream.write("\r\n");
@@ -244,7 +258,6 @@ public class Peers implements Runnable {
 		} catch (JSONRPC2ParseException e) {
 			e.printStackTrace();
 		}
-
 	}
 
 	/**
@@ -259,6 +272,9 @@ public class Peers implements Runnable {
 			System.err.println("Usage: GUID, ServerIPAddress");
 		}
 
-		new Peers(Integer.parseInt(args[0]), args[1], 8000);
+		Peers peers = new Peers(Integer.parseInt(args[0]), args[1], 8000);
+//		new Peers(1, "127.0.0.1", 5014);
+
 	}
+
 }

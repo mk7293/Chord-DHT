@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 import net.minidev.json.JSONObject;
 
@@ -65,6 +66,8 @@ public class LookupServer {
 		private PrintWriter outputStream;
 		private BufferedReader inputStream;
 		private Dispatcher dispatcher;
+		private static TreeMap<Integer, InetAddress> activeNodes = new TreeMap<>();
+		private static int requestId = 0;
 
 		/**
 		 * Initiate all the socket related variables
@@ -87,8 +90,8 @@ public class LookupServer {
 				e.printStackTrace();
 			}
 
-			this.dispatcher = new Dispatcher();
-			dispatcher.register(new ServerHandler.SocketHandler());
+//			this.dispatcher = new Dispatcher();
+//			dispatcher.register(new ServerHandler.SocketHandler());
 		}
 
 		/**
@@ -99,9 +102,10 @@ public class LookupServer {
 
 			String contentHeader = "Content-Length: ";
 			int contentLength = 0;
-				
+
 			try {
-				String post = inputStream.readLine();boolean isPost = post.startsWith("POST");
+				String post = inputStream.readLine();
+				boolean isPost = post.startsWith("POST");
 				System.out.println("isPost::" + isPost);
 				while (!(post = inputStream.readLine()).equals("")) {
 					if (isPost && post.startsWith(contentHeader)) {
@@ -120,22 +124,79 @@ public class LookupServer {
 				}
 
 				JSONRPC2Request jsonrpc2Request = JSONRPC2Request.parse(reqBuilder.toString());
-				JSONRPC2Response jsonrpc2Response = dispatcher.process(jsonrpc2Request, null);
+				JSONRPC2Response jsonrpc2Response = processMethods(jsonrpc2Request, clientSocket.getInetAddress());
 
 				outputStream.write("HTTP/1.1 200 OK\r\n");
 				outputStream.write("Content-Type: application/json\r\n");
 				outputStream.write("\r\n");
 				outputStream.write(jsonrpc2Response.toJSONString());
+
 				outputStream.flush();
 				outputStream.close();
-
 				clientSocket.close();
+
+				sendActiveNodes();
+
 			} catch (IOException | JSONRPC2ParseException e) {
 				e.printStackTrace();
 			}
-
 		}
 
+		@SuppressWarnings({ "unchecked", "deprecation" })
+		public JSONRPC2Response processMethods(JSONRPC2Request request, InetAddress ipAddr) {
+
+			String response = "";
+			switch (request.getMethod()) {
+			case "join":
+				ArrayList<Object> params = (ArrayList<Object>) request.getParams();
+
+				long lo = (long) params.get(0);
+				int guid = (int) lo;
+
+				if (!activeNodes.containsKey(guid)) {
+					activeNodes.put(guid, ipAddr);
+					response = "Welcome GUID: " + guid;
+				} else {
+					response = "GUID: " + guid + " already in use";
+				}
+
+			case "leave":
+				break;
+			}
+
+			return new JSONRPC2Response(response, request.getID());
+		}
+
+		public void sendActiveNodes() {
+			Map<String, Object> temps = new TreeMap<String, Object>();
+			for (Map.Entry<Integer, InetAddress> entry : activeNodes.entrySet()) {
+				temps.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
+			}
+			
+			for (Map.Entry<Integer, InetAddress> entry : activeNodes.entrySet()) {
+				System.out.println("ipaddr:: " + entry.getValue());
+				try {
+					JSONRPC2Session session = new JSONRPC2Session(new URL("http:/" + entry.getValue() + ":4000/"));
+					System.out.println("size:: " + temps.size() + "::::" + temps.get("1"));
+					
+					JSONRPC2Request request = new JSONRPC2Request("UpdateFingerTable", requestId++);
+					request.setNamedParams(temps);
+					JSONRPC2Response jsonrpc2Response = session.send(request);
+
+					if (jsonrpc2Response.indicatesSuccess()) {
+						System.out.println("ActiveNodes send to client: " + entry.getValue() + " and "
+								+ jsonrpc2Response.getResult());
+					} else {
+						System.out.println("Error");
+					}
+
+				} catch (IOException e) {
+					e.printStackTrace();
+				} catch (JSONRPC2SessionException e) {
+					e.printStackTrace();
+				}
+			}
+		}
 	}
 
 	public static void main(String[] args) {

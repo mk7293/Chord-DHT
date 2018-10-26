@@ -149,7 +149,7 @@ public class Peers extends Thread {
 				System.out.println("GUID: " + guid + " joined along with peers");
 				isNodeOnline = true;
 				System.out.println();
-				
+
 			} else {
 				System.out.println("GUID already exists");
 				isNodeOnline = false;
@@ -244,7 +244,6 @@ public class Peers extends Thread {
 				System.out.println("File: " + fileContent + " inserted at GUID: " + guid);
 				fileCollection.add(fileContent);
 			} else {
-				System.out.println("File: " + fileContent + " routed to " + successorNode);
 				transferFile(successorNode, successorNode, fileContent);
 			}
 		} else {
@@ -263,7 +262,6 @@ public class Peers extends Thread {
 
 			int successorNode = fingerTable.getFingerTable().get(getNextSuccessorNode);
 
-			System.out.println("ggetNext: " + getNextSuccessorNode + ":::: success:: " + successorNode);
 			if (successorNode == guid) {
 				System.out.println("File: " + fileContent + " inserted at GUID: " + guid);
 				fileCollection.add(fileContent);
@@ -290,7 +288,7 @@ public class Peers extends Thread {
 
 			list.add(String.valueOf(id));
 			list.add(searchFileContent);
-			list.add(ipAddr);
+			list.add(String.valueOf(ipAddr));
 
 			peerRequest.setPositionalParams(list);
 
@@ -312,8 +310,17 @@ public class Peers extends Thread {
 	private void searchFileInOtherPeers(int id, String searchFileContent, InetAddress ipAddr) {
 
 		if (fingerTable.getFingerTable().containsKey(id)) {
-			searchSuccessorPeers(ipAddr, fingerTable.getFingerTable().get(id), fingerTable.getFingerTable().get(id),
-					searchFileContent);
+			int successorNode = fingerTable.getFingerTable().get(id);
+
+			if (successorNode == guid) {
+				if (fileCollection.contains(searchFileContent)) {
+					System.out.println("File: " + searchFileContent + " is at guid: " + guid);
+				} else {
+					System.out.println("No such File exists");
+				}
+			} else {
+				searchSuccessorPeers(ipAddr, successorNode, fingerTable.getFingerTable().get(id), searchFileContent);
+			}
 		} else {
 			int min = Integer.MAX_VALUE;
 			int getNextSuccessorNode = -1;
@@ -328,7 +335,7 @@ public class Peers extends Thread {
 				}
 			}
 
-			searchSuccessorPeers(ipAddr, fingerTable.getFingerTable().get(id),
+			searchSuccessorPeers(ipAddr, fingerTable.getFingerTable().get(getNextSuccessorNode),
 					inBetweenNodes(getNextSuccessorNode, fingerTable.getFingerTable().get(getNextSuccessorNode), id),
 					searchFileContent);
 
@@ -342,6 +349,8 @@ public class Peers extends Thread {
 	private void searchFile(String searchFileContent) {
 
 		int hashId = Math.abs(searchFileContent.hashCode() % 16);
+		
+		System.out.println("hashId: " + hashId);
 
 		if (hashId == guid) {
 			if (fileCollection.contains(searchFileContent)) {
@@ -360,7 +369,7 @@ public class Peers extends Thread {
 			System.err.println("No files stored in this peer guid: " + guid);
 		} else {
 			for (String files : fileCollection) {
-				System.out.println("*" + files);
+				System.out.println("* " + files);
 			}
 		}
 	}
@@ -383,18 +392,17 @@ public class Peers extends Thread {
 					request.setPositionalParams(list);
 
 					JSONRPC2Response response = session.send(request);
-					
-					System.out.println("resdsdsd:::" + response.getResult());
-					
-					if (response.indicatesSuccess()) {
-						
-						System.out.println("res:::" + response.getResult());
-						
-						String files = (String) response.getResult();
-						String[] allFiles = files.split("%%%%%");
 
-						for (int i = 0; i < allFiles.length; i++) {
-							fileCollection.add(allFiles[i]);
+					if (response.indicatesSuccess()) {
+
+						String files = (String) response.getResult();
+
+						if (files.contains("%%%%%")) {
+							String[] allFiles = files.split("%%%%%");
+
+							for (int i = 0; i < allFiles.length; i++) {
+								fileCollection.add(allFiles[i]);
+							}
 						}
 
 					} else {
@@ -429,8 +437,6 @@ public class Peers extends Thread {
 			Map<String, Object> tempMap = request.getNamedParams();
 
 			for (Map.Entry<String, Object> entry : tempMap.entrySet()) {
-
-				System.out.println(entry.getValue());
 
 				try {
 					activeNodes.put(Integer.parseInt(entry.getKey()),
@@ -482,7 +488,8 @@ public class Peers extends Thread {
 			int fileId = Integer.parseInt((String) tempList.get(0));
 			String searchFileContent = (String) tempList.get(1);
 			try {
-				routeAddr = InetAddress.getByName((String) tempList.get(1));
+				String ip = (String) tempList.get(2);
+				routeAddr = InetAddress.getByName(ip.substring(1));
 			} catch (UnknownHostException e) {
 				e.printStackTrace();
 			}

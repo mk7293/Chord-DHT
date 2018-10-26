@@ -65,8 +65,8 @@ public class LookupServer {
 		private Socket clientSocket;
 		private PrintWriter outputStream;
 		private BufferedReader inputStream;
-		private Dispatcher dispatcher;
 		private static TreeMap<Integer, InetAddress> activeNodes = new TreeMap<>();
+		private static HashMap<Integer, InetAddress> anchorNodes = new HashMap<>();
 		private static int requestId = 0;
 
 		/**
@@ -81,17 +81,10 @@ public class LookupServer {
 			try {
 				this.clientSocket = socket;
 				this.outputStream = new PrintWriter(clientSocket.getOutputStream());
-			} catch (IOException e) {
-				System.out.println("IO Output Exception in Handler Constructor");
-			}
-			try {
 				this.inputStream = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 			} catch (IOException e) {
-				e.printStackTrace();
+				System.out.println("IO Output Exception in Lookup Peer Handler Constructor");
 			}
-
-//			this.dispatcher = new Dispatcher();
-//			dispatcher.register(new ServerHandler.SocketHandler());
 		}
 
 		/**
@@ -100,6 +93,16 @@ public class LookupServer {
 		 */
 		public void run() {
 
+			if (anchorNodes.isEmpty()) {
+			
+			}
+			
+			
+			
+			
+			
+			
+			
 			String contentHeader = "Content-Length: ";
 			int contentLength = 0;
 

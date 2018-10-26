@@ -7,6 +7,7 @@ public class FingerTable {
 	private int guid;
 	private TreeMap<Integer, InetAddress> activeNodes;
 	private TreeMap<Integer, Integer> sucessors;
+	public int firstNode;
 	private static final int I_ENTRIES = 4;
 	private static final int MAX_NODES = 16;
 
@@ -23,7 +24,11 @@ public class FingerTable {
 			boolean flag = false;
 			Object[] listOfNodes = activeNodes.keySet().toArray();
 			int findNode = ((int) (guid + Math.pow(2, i))) % MAX_NODES;
-
+			
+			if (i == 0) {
+				firstNode = findNode;
+			}
+			
 			if (activeNodes.containsKey(findNode)) {
 				nextLiveNode = findNode;
 			} else {
@@ -44,11 +49,19 @@ public class FingerTable {
 		}
 	}
 	
+	public int getFirstNode() {
+		return firstNode;
+	}
+	
 	public void printFingerTable() {
-		System.out.println("Actual        Successor");
+		System.out.println("Actual\t\tSuccessor");
 		for (Map.Entry<Integer, Integer> entry : sucessors.entrySet()) {
-			System.out.println(entry.getKey() + "      " + entry.getValue());
+			System.out.println(entry.getKey() + "\t\t" + entry.getValue());
 		}
+	}
+	
+	public TreeMap<Integer, Integer> getFingerTable() {
+		return sucessors;
 	}
 
 }

@@ -39,6 +39,12 @@ public class Peers extends Thread {
 	private FingerTable fingerTable;
 	private boolean isNodeOnline = false;
 
+	ArrayList<String> fileCollection;
+	TreeMap<Integer, InetAddress> activeNodes;
+
+	InetAddress routeAddr = null;
+	String routeMessage = "";
+
 	public Peers(int guid, String ipAddress, int port) {
 
 		this.guid = guid;
@@ -48,12 +54,13 @@ public class Peers extends Thread {
 		thread = new Thread(this);
 		thread.start();
 
+		fileCollection = new ArrayList<>();
+		activeNodes = new TreeMap<>();
+
 		while (true) {
 			Scanner scanner = new Scanner(System.in);
 
 			try {
-
-				System.out.println("Guid: " + guid);
 
 				System.out.println(
 						"Chord DHT Menu \n 1. Join Network \n " + "2. Leave Network \n 3. Add File \n 4. Show Files \n "
@@ -64,14 +71,30 @@ public class Peers extends Thread {
 				switch (option) {
 				case 1:
 					joinNetwork();
+					if (!isNodeOnline) {
+						System.out.println("Please provide different GUID between 0 & 15 inclusive: ");
+						this.guid = scanner.nextInt();
+					}
 					break;
 				case 2:
+
 					break;
 				case 3:
+					System.out.println("Please enter the file content: ");
+					String fileContent = scanner.next();
+
+					addFile(-1, fileContent);
+
 					break;
 				case 4:
+					showFilesFromCurrent();
+
 					break;
 				case 5:
+					System.out.println("Please enter the file content: ");
+					String searchFileContent = scanner.next();
+
+					searchFile(searchFileContent);
 					break;
 				case 6:
 					fingerTable.printFingerTable();
@@ -126,7 +149,12 @@ public class Peers extends Thread {
 				System.out.println("GUID: " + guid + " joined along with peers");
 				isNodeOnline = true;
 				System.out.println();
+				
+			} else {
+				System.out.println("GUID already exists");
+				isNodeOnline = false;
 			}
+
 		} else {
 			System.out.println("Network '" + guid + "' already joined ");
 		}
@@ -139,33 +167,247 @@ public class Peers extends Thread {
 
 	}
 
+	private int findDistance(int keyId, int destNodeId) {
+		int distance = 1;
+		while (true) {
+			if ((distance++ + keyId) % 16 == destNodeId)
+				return distance - 1;
+		}
+	}
+
+	private int inBetweenNodes(int actualNode, int successorNode, int destNodeId) {
+		if (actualNode > successorNode) {
+			successorNode += 16;
+			if (actualNode > destNodeId && destNodeId < successorNode)
+				destNodeId += 16;
+		}
+
+		if (actualNode < destNodeId && destNodeId < successorNode) {
+			return successorNode % 16;
+		} else {
+			return destNodeId % 16;
+		}
+	}
+
+	private void transferFile(int toSend, int successorNode, String fileContent) {
+
+		System.out.println("File: " + fileContent + " routed to " + successorNode);
+
+		try {
+			JSONRPC2Session peerSession = new JSONRPC2Session(
+					new URL("http:/" + activeNodes.get(successorNode) + ":4000"));
+
+			JSONRPC2Request peerRequest = new JSONRPC2Request("InsertTransferedFile", requestId++);
+
+			ArrayList<Object> list = new ArrayList<>();
+			list.add(String.valueOf(toSend));
+			list.add(fileContent);
+
+			peerRequest.setPositionalParams(list);
+
+			JSONRPC2Response peerResponse = peerSession.send(peerRequest);
+
+			if (peerResponse.indicatesSuccess()) {
+				System.out.println(peerResponse.getResult());
+			} else {
+				System.out.println("Error in jsonResponse from transferFile() method");
+			}
+
+		} catch (MalformedURLException e) {
+			e.printStackTrace();
+		} catch (JSONRPC2SessionException e) {
+			e.printStackTrace();
+		}
+
+	}
+
 	/**
 	 * Add the files into the network when the hashed file code matches with its
 	 * peer id
 	 */
-	private void addFile() {
+	private void addFile(int id, String fileContent) {
+		int destNodeId = 0;
+		if (id == -1)
+			destNodeId = fileContent.hashCode() % 16;
+		else
+			destNodeId = id;
+
+		System.out.println("HashId: " + destNodeId);
+
+		if (destNodeId == guid) {
+			System.out.println("File: " + fileContent + " inserted at GUID: " + guid);
+			fileCollection.add(fileContent);
+		} else if (fingerTable.getFingerTable().containsKey(destNodeId)) {
+			int successorNode = fingerTable.getFingerTable().get(destNodeId);
+
+			if (successorNode == guid) {
+				System.out.println("File: " + fileContent + " inserted at GUID: " + guid);
+				fileCollection.add(fileContent);
+			} else {
+				System.out.println("File: " + fileContent + " routed to " + successorNode);
+				transferFile(successorNode, successorNode, fileContent);
+			}
+		} else {
+			System.out.println("Not to successor");
+			int min = Integer.MAX_VALUE;
+			int getNextSuccessorNode = -1;
+			for (Map.Entry<Integer, Integer> entry : fingerTable.getFingerTable().entrySet()) {
+				int keyId = entry.getKey();
+				int distance = findDistance(keyId, destNodeId);
+
+				if (min > distance) {
+					min = distance;
+					getNextSuccessorNode = keyId;
+				}
+			}
+
+			int successorNode = fingerTable.getFingerTable().get(getNextSuccessorNode);
+
+			System.out.println("ggetNext: " + getNextSuccessorNode + ":::: success:: " + successorNode);
+			if (successorNode == guid) {
+				System.out.println("File: " + fileContent + " inserted at GUID: " + guid);
+				fileCollection.add(fileContent);
+			} else {
+
+				transferFile(inBetweenNodes(getNextSuccessorNode, successorNode, destNodeId), successorNode,
+						fileContent);
+			}
+		}
+	}
+
+	private void searchSuccessorPeers(InetAddress ipAddr, int successorNode, int id, String searchFileContent) {
+
+		System.out.println("Contacting successor: " + successorNode + " from the node: " + guid
+				+ " to search for file: " + searchFileContent);
+
+		try {
+			JSONRPC2Session peerSession = new JSONRPC2Session(
+					new URL("http:/" + activeNodes.get(successorNode) + ":4000"));
+
+			JSONRPC2Request peerRequest = new JSONRPC2Request("SearchFile", requestId++);
+
+			ArrayList<Object> list = new ArrayList<>();
+
+			list.add(String.valueOf(id));
+			list.add(searchFileContent);
+			list.add(ipAddr);
+
+			peerRequest.setPositionalParams(list);
+
+			JSONRPC2Response peerResponse = peerSession.send(peerRequest);
+
+			if (peerResponse.indicatesSuccess()) {
+				System.out.println(peerResponse.getResult());
+			} else {
+				System.out.println("Error in jsonResponse from searchSuccessorPeers() method");
+			}
+
+		} catch (MalformedURLException e) {
+			e.printStackTrace();
+		} catch (JSONRPC2SessionException e) {
+			e.printStackTrace();
+		}
+	}
+
+	private void searchFileInOtherPeers(int id, String searchFileContent, InetAddress ipAddr) {
+
+		if (fingerTable.getFingerTable().containsKey(id)) {
+			searchSuccessorPeers(ipAddr, fingerTable.getFingerTable().get(id), fingerTable.getFingerTable().get(id),
+					searchFileContent);
+		} else {
+			int min = Integer.MAX_VALUE;
+			int getNextSuccessorNode = -1;
+
+			for (Map.Entry<Integer, Integer> entry : fingerTable.getFingerTable().entrySet()) {
+				int keyId = entry.getKey();
+				int distance = findDistance(keyId, id);
+
+				if (min > distance) {
+					min = distance;
+					getNextSuccessorNode = keyId;
+				}
+			}
+
+			searchSuccessorPeers(ipAddr, fingerTable.getFingerTable().get(id),
+					inBetweenNodes(getNextSuccessorNode, fingerTable.getFingerTable().get(getNextSuccessorNode), id),
+					searchFileContent);
+
+		}
 
 	}
 
 	/**
 	 * Search for the file by lookup on the finger table
 	 */
-	private void searchFile() {
+	private void searchFile(String searchFileContent) {
 
+		int hashId = Math.abs(searchFileContent.hashCode() % 16);
+
+		if (hashId == guid) {
+			if (fileCollection.contains(searchFileContent)) {
+				System.out.println("File: " + searchFileContent + " is at guid: " + guid);
+			} else {
+				System.out.println("No such File exists");
+			}
+		} else {
+			searchFileInOtherPeers(hashId, searchFileContent, activeNodes.get(guid));
+		}
+	}
+
+	private void showFilesFromCurrent() {
+
+		if (fileCollection.isEmpty()) {
+			System.err.println("No files stored in this peer guid: " + guid);
+		} else {
+			for (String files : fileCollection) {
+				System.out.println("*" + files);
+			}
+		}
 	}
 
 	/**
-	 * Transfer the file into the successor nodes when its goes offline
+	 * Get the file from the successor when the nodes comes online
 	 */
-	private void transferFile() {
+	private void getSuccessorFiles() {
+		if (isNodeOnline) {
+			int successorNode = fingerTable.getFingerTable().get(fingerTable.getFirstNode());
+			if (guid != successorNode) {
+				try {
+					JSONRPC2Session session = new JSONRPC2Session(
+							new URL("http:/" + activeNodes.get(successorNode) + ":4000"));
 
-	}
+					JSONRPC2Request request = new JSONRPC2Request("GetAllFiles", requestId++);
 
-	/**
-	 * Get the file from the sucessor when the nodes comes online
-	 */
-	private void getFiles() {
+					ArrayList<Object> list = new ArrayList<>();
+					list.add(String.valueOf(guid));
+					request.setPositionalParams(list);
 
+					JSONRPC2Response response = session.send(request);
+					
+					System.out.println("resdsdsd:::" + response.getResult());
+					
+					if (response.indicatesSuccess()) {
+						
+						System.out.println("res:::" + response.getResult());
+						
+						String files = (String) response.getResult();
+						String[] allFiles = files.split("%%%%%");
+
+						for (int i = 0; i < allFiles.length; i++) {
+							fileCollection.add(allFiles[i]);
+						}
+
+					} else {
+						System.out.println("Json Response Error in getSuccessorFiles()");
+					}
+
+				} catch (MalformedURLException e) {
+					e.printStackTrace();
+				} catch (JSONRPC2SessionException e) {
+					e.printStackTrace();
+				}
+			}
+		}
 	}
 
 	/**
@@ -179,18 +421,20 @@ public class Peers extends Thread {
 	private JSONRPC2Response processMethods(JSONRPC2Request request) {
 		String response = "";
 
+		ArrayList<Object> tempList;
+
 		switch (request.getMethod()) {
 		case "UpdateFingerTable":
 
 			Map<String, Object> tempMap = request.getNamedParams();
-			TreeMap<Integer, InetAddress> activeNodes = new TreeMap<>();
 
 			for (Map.Entry<String, Object> entry : tempMap.entrySet()) {
-				
+
 				System.out.println(entry.getValue());
-				
+
 				try {
-					activeNodes.put(Integer.parseInt(entry.getKey()), InetAddress.getByName(String.valueOf(entry.getValue()).substring(1)));
+					activeNodes.put(Integer.parseInt(entry.getKey()),
+							InetAddress.getByName(String.valueOf(entry.getValue()).substring(1)));
 				} catch (NumberFormatException | UnknownHostException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
@@ -199,6 +443,64 @@ public class Peers extends Thread {
 
 			constructFingerTable(activeNodes);
 			response = "Finger Table Constructed";
+			getSuccessorFiles();
+			break;
+		case "GetAllFiles":
+			if (isNodeOnline && !fileCollection.isEmpty()) {
+				System.out.println("Sending the files to the Actual Node");
+
+				tempList = (ArrayList<Object>) request.getPositionalParams();
+				int actualGuid = Integer.parseInt((String) tempList.get(0));
+
+				int i = 0;
+				while (i < fileCollection.size()) {
+					String file = fileCollection.get(i);
+					int fileHashId = Math.abs(file.hashCode() % 16);
+
+					if (actualGuid == inBetweenNodes(guid, actualGuid, fileHashId)) {
+						response += file + "%%%%%";
+						fileCollection.remove(i);
+						continue;
+					}
+
+					i++;
+				}
+			}
+
+			break;
+		case "InsertTransferedFile":
+			tempList = (ArrayList<Object>) request.getPositionalParams();
+
+			int idToInsert = Integer.parseInt((String) tempList.get(0));
+			String fileContent = (String) tempList.get(1);
+
+			addFile(idToInsert, fileContent);
+			break;
+		case "SearchFile":
+			tempList = (ArrayList<Object>) request.getPositionalParams();
+
+			int fileId = Integer.parseInt((String) tempList.get(0));
+			String searchFileContent = (String) tempList.get(1);
+			try {
+				routeAddr = InetAddress.getByName((String) tempList.get(1));
+			} catch (UnknownHostException e) {
+				e.printStackTrace();
+			}
+
+			if (fileId == guid) {
+				if (fileCollection.contains(searchFileContent)) {
+					routeMessage = "File found at " + guid;
+				} else {
+					routeMessage = "No such file exists";
+				}
+			} else {
+				searchFileInOtherPeers(fileId, searchFileContent, routeAddr);
+			}
+			break;
+		case "PrintResponse":
+			tempList = (ArrayList<Object>) request.getPositionalParams();
+
+			System.out.println((String) tempList.get(0));
 		}
 
 		return new JSONRPC2Response(response, request.getID());
@@ -208,15 +510,12 @@ public class Peers extends Thread {
 	public void run() {
 		try {
 			ServerSocket serverSocket = new ServerSocket(4000);
-			System.out.println("Server Run Started");
 
 			while (true) {
 				Socket socket = serverSocket.accept();
-				System.out.println("Connected run method:: " + socket.getInetAddress());
+//				System.out.println("Connected run method:: " + socket.getInetAddress());
 				PrintWriter outputStream = new PrintWriter(socket.getOutputStream());
 				BufferedReader inputStream = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-				System.out.println("Waiting for request");
 
 				String contentHeader = "Content-Length: ";
 				int contentLength = 0;
@@ -239,8 +538,6 @@ public class Peers extends Thread {
 					}
 				}
 
-				System.out.println(reqBuilder.toString());
-
 				JSONRPC2Request jsonrpc2Request = JSONRPC2Request.parse(reqBuilder.toString());
 				JSONRPC2Response jsonrpc2Response = processMethods(jsonrpc2Request);
 
@@ -252,6 +549,34 @@ public class Peers extends Thread {
 				outputStream.close();
 
 				socket.close();
+
+				if (routeMessage.length() != 0) {
+					try {
+						JSONRPC2Session peerSession = new JSONRPC2Session(new URL("http:/" + routeAddr + ":4000"));
+
+						JSONRPC2Request peerRequest = new JSONRPC2Request("PrintResponse", requestId++);
+
+						ArrayList<Object> list = new ArrayList<>();
+
+						list.add(routeMessage);
+						peerRequest.setPositionalParams(list);
+
+						JSONRPC2Response peerResponse = peerSession.send(peerRequest);
+
+						if (peerResponse.indicatesSuccess()) {
+							System.out.println(peerResponse.getResult());
+						} else {
+							System.out.println("Error in jsonResponse from searchSuccessorPeers() method");
+						}
+
+						routeMessage = "";
+
+					} catch (MalformedURLException e) {
+						e.printStackTrace();
+					} catch (JSONRPC2SessionException e) {
+						e.printStackTrace();
+					}
+				}
 			}
 		} catch (IOException e) {
 			e.printStackTrace();

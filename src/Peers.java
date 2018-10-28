@@ -57,7 +57,6 @@ public class Peers extends Thread {
 		activeNodes = new TreeMap<>();
 
 		while (true) {
-
 			try {
 
 				System.out.println(
@@ -65,6 +64,7 @@ public class Peers extends Thread {
 								+ "5. Search File \n 6. Show Finger Table \n ");
 
 				System.out.print("Please enter your option number: ");
+				Scanner scanner = new Scanner(System.in);
 				int option = scanner.nextInt();
 				System.out.println();
 
@@ -114,6 +114,8 @@ public class Peers extends Thread {
 						System.out.println("Node is offline");
 					}
 					break;
+				default:
+					System.out.println("Please provide the correct option number");
 				}
 
 			} catch (InputMismatchException e) {
@@ -184,8 +186,13 @@ public class Peers extends Thread {
 						} else {
 							System.out.println(response);
 							isNodeOnline = false;
-							System.out.println("Please provide different GUID between 0 & 15 inclusive: ");
-							this.guid = scanner.nextInt();
+							while (true) {
+								System.out.println("Please provide different GUID between 0 & 15 inclusive: ");
+								this.guid = scanner.nextInt();
+								if (this.guid >= 0 && this.guid <= 15) {
+									break;
+								}
+							}
 						}
 					} else {
 						System.out.println("Error");
@@ -814,11 +821,15 @@ public class Peers extends Thread {
 
 		if (args.length != 2) {
 			System.err.println("Usage: GUID, ServerIPAddress");
+			System.exit(0);
+		}
+
+		if (Integer.parseInt(args[0]) < 0 && Integer.parseInt(args[0]) > 15) {
+			System.err.println("Please provide different GUID between 0 & 15 inclusive");
+			System.exit(0);
 		}
 
 		new Peers(Integer.parseInt(args[0]), args[1], 8000);
-//		new Peers(1, "127.0.0.1", 5014);
-
 	}
 
 }

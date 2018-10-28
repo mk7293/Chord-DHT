@@ -44,6 +44,13 @@ public class Peers extends Thread {
 
 	Scanner scanner = new Scanner(System.in);
 
+	/**
+	 * Chord DHT Menu has been displayed along with its necessary operations to do
+	 * 
+	 * @param guid
+	 * @param ipAddress
+	 * @param port
+	 */
 	public Peers(int guid, String ipAddress, int port) {
 
 		this.guid = guid;
@@ -124,6 +131,10 @@ public class Peers extends Thread {
 		}
 	}
 
+	/**
+	 * Connect to the server via JSONRPCSession using server Ip address and server
+	 * port number
+	 */
 	private void connectToSocket() {
 		URL serverURL = null;
 		try {
@@ -135,7 +146,8 @@ public class Peers extends Thread {
 	}
 
 	/**
-	 * Join into the network
+	 * Join into the network and inform the anchor node to update finger table and
+	 * get the files from successor if any
 	 */
 	private void joinNetwork() {
 		if (!isNodeOnline) {
@@ -211,7 +223,8 @@ public class Peers extends Thread {
 	}
 
 	/**
-	 * Leave the Network
+	 * Leave the Network and inform the anchor node and transfer all the files to
+	 * the successor
 	 */
 	private void leaveNetwork() {
 
@@ -261,6 +274,14 @@ public class Peers extends Thread {
 		}
 	}
 
+	/**
+	 * Find the distance between to nodes to find the minimum distance node between
+	 * the file to send to that
+	 * 
+	 * @param keyId
+	 * @param destNodeId
+	 * @return
+	 */
 	private int findDistance(int keyId, int destNodeId) {
 		int distance = 1;
 		while (true) {
@@ -269,6 +290,14 @@ public class Peers extends Thread {
 		}
 	}
 
+	/**
+	 * Checking whether the HashFile is in between the sucessor or not
+	 * 
+	 * @param actualNode
+	 * @param successorNode
+	 * @param destNodeId
+	 * @return
+	 */
 	private int inBetweenNodes(int actualNode, int successorNode, int destNodeId) {
 		if (actualNode > successorNode) {
 			successorNode += 16;
@@ -283,6 +312,13 @@ public class Peers extends Thread {
 		}
 	}
 
+	/**
+	 * Transfer the file to the required sucessor
+	 * 
+	 * @param toSend
+	 * @param successorNode
+	 * @param fileContent
+	 */
 	private void transferFile(int toSend, int successorNode, String fileContent) {
 
 		System.out.println("File: " + fileContent + " routed to " + successorNode);
@@ -367,6 +403,14 @@ public class Peers extends Thread {
 		}
 	}
 
+	/**
+	 * Search for the file in the successor nodes via JSONRPC2Session
+	 * 
+	 * @param ipAddr
+	 * @param successorNode
+	 * @param id
+	 * @param searchFileContent
+	 */
 	private void searchSuccessorPeers(InetAddress ipAddr, int successorNode, int id, String searchFileContent) {
 
 		System.out.println("Contacting successor: " + successorNode + " from the node: " + guid
@@ -401,6 +445,13 @@ public class Peers extends Thread {
 		}
 	}
 
+	/**
+	 * Searching whether the file is in the successor peer or not
+	 * 
+	 * @param id
+	 * @param searchFileContent
+	 * @param ipAddr
+	 */
 	private void searchFileInOtherPeers(int id, String searchFileContent, InetAddress ipAddr) {
 
 		if (fingerTable.getFingerTable().containsKey(id)) {
@@ -462,11 +513,15 @@ public class Peers extends Thread {
 		}
 	}
 
+	/**
+	 * Showing the file from the current peer
+	 */
 	private void showFilesFromCurrent() {
 
 		if (fileCollection.isEmpty()) {
 			System.err.println("No files stored in this peer guid: " + guid);
 		} else {
+			System.out.println("There are " + fileCollection.size() + " in this peer");
 			for (String files : fileCollection) {
 				System.out.println("* " + files);
 			}
@@ -480,7 +535,6 @@ public class Peers extends Thread {
 	private void transferSuccessorFiles(int successorNode) {
 
 		try {
-
 			System.out.println("activeNodes.get(successorNode)" + activeNodes.get(successorNode));
 
 			JSONRPC2Session rpcSession = new JSONRPC2Session(
@@ -568,6 +622,10 @@ public class Peers extends Thread {
 		fingerTable = new FingerTable(guid, activeNodes);
 	}
 
+	/**
+	 * Sending all the active nodes information from the anchor nodes to the active
+	 * peers
+	 */
 	public void sendActiveNodes() {
 		Map<String, Object> temps = new TreeMap<String, Object>();
 		for (Map.Entry<Integer, InetAddress> entry : anchorActiveNodes.entrySet()) {
@@ -604,6 +662,13 @@ public class Peers extends Thread {
 		}
 	}
 
+	/**
+	 * Processing the request which sends from the another peer via unique port
+	 * number
+	 * 
+	 * @param request
+	 * @return
+	 */
 	private JSONRPC2Response processMethods(JSONRPC2Request request) {
 		String response = "";
 
@@ -724,6 +789,10 @@ public class Peers extends Thread {
 		return new JSONRPC2Response(response, request.getID());
 	}
 
+	/**
+	 * Peers as the server to process the JSONRPC2Request and sends the
+	 * JSONRPC2Response back to the peers
+	 */
 	@SuppressWarnings("resource")
 	@Override
 	public void run() {

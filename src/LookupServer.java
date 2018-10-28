@@ -120,6 +120,13 @@ public class LookupServer {
 			}
 		}
 
+		/**
+		 * 
+		 * Process the methods received from the peers and reroute to the anchor node
+		 * 
+		 * @param request
+		 * @return
+		 */
 		@SuppressWarnings({ "unchecked", "deprecation" })
 		public JSONRPC2Response processMethods(JSONRPC2Request request) {
 

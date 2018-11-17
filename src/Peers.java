@@ -34,6 +34,7 @@ public class Peers extends Thread {
 
 	private FingerTable fingerTable;
 	private boolean isNodeOnline = false;
+	private boolean anchorFlag = false;
 
 	ArrayList<String> fileCollection;
 	private static TreeMap<Integer, InetAddress> anchorActiveNodes = new TreeMap<>();
@@ -172,7 +173,7 @@ public class Peers extends Thread {
 					System.out.println("Anchor Node GUID: " + guid + " joined");
 					anchorActiveNodes.put(guid, InetAddress.getByName(InetAddress.getLocalHost().getHostAddress()));
 					isNodeOnline = true;
-
+					anchorFlag = true;
 					constructFingerTable(anchorActiveNodes);
 					getSuccessorFiles();
 
@@ -250,14 +251,26 @@ public class Peers extends Thread {
 					+ fingerTable.getFirstNode());
 			transferSuccessorFiles(fingerTable.getFingerTable().get(fingerTable.getFirstNode()));
 
-			// If else block
 			System.out.println("Response:: " + response);
 			JSONRPC2Session rpcSession = new JSONRPC2Session(new URL("http:/" + response + ":4000/"));
-			JSONRPC2Request request2 = new JSONRPC2Request("LeavePeer", requestId++);
-
-			list.clear();
-			list.add(String.valueOf(guid));
-			request2.setPositionalParams(list);
+			JSONRPC2Request request2 = null;
+			
+			if (anchorFlag) {
+				System.out.println("Anchor True");
+				anchorFlag = false;
+				anchorActiveNodes.remove(guid);
+				request2 = new JSONRPC2Request("LeavePeerAnchor", requestId++);
+				Map<String, Object> tempMap = new TreeMap<>();
+				for (Map.Entry<Integer, InetAddress> entry : anchorActiveNodes.entrySet()) {
+					tempMap.put(String.valueOf(entry.getKey()), String.valueOf(entry.getValue()));
+				}
+				request2.setNamedParams(tempMap);
+			} else {
+				list.clear();
+				request2 = new JSONRPC2Request("LeavePeer", requestId++);
+				list.add(String.valueOf(guid));
+				request2.setPositionalParams(list);
+			}
 
 			JSONRPC2Response response2 = rpcSession.send(request2);
 
@@ -703,6 +716,20 @@ public class Peers extends Thread {
 			}
 
 			break;
+		case "LeavePeerAnchor":
+			anchorFlag = true;
+			Map<String, Object> temps = request.getNamedParams();
+			for (Map.Entry<String, Object> entry : temps.entrySet()) {
+				
+				try {
+					anchorActiveNodes.put(Integer.parseInt(entry.getKey()),
+							InetAddress.getByName(String.valueOf(entry.getValue()).substring(1)));
+				} catch (NumberFormatException | UnknownHostException e) {
+					System.out.println("UnknownHostException on processMethods()");
+				}
+				
+			}
+			
 		case "UpdateFingerTable":
 
 			Map<String, Object> tempMap = request.getNamedParams();

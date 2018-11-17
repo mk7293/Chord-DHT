@@ -61,10 +61,7 @@ public class FingerTable {
 
 	public void printFingerTable() {
 		System.out.println("Actual\t\tSuccessor");
-//		for (Map.Entry<Integer, Integer> entry : sucessors.entrySet()) {
-//			System.out.println(entry.getKey() + "\t\t" + entry.getValue());
-//		}
-		
+
 		for (int i = 0; i < I_ENTRIES; i++) {
 			System.out.println(actuals.get(i) + "\t\t" + successors.get(i));
 		}

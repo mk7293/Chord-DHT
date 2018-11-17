@@ -35,7 +35,6 @@ public class LookupServer {
 			while (true) {
 				new Handler(serverSocket.accept()).start();
 			}
-
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -53,8 +52,10 @@ public class LookupServer {
 		private Socket clientSocket;
 		private PrintWriter outputStream;
 		private BufferedReader inputStream;
+		private static ArrayList<Integer> guids = new ArrayList<>();
 		private static HashMap<Integer, InetAddress> anchorNodes = new HashMap<>();
 		private static InetAddress anchorIpAddress;
+		private static int anchorGuid;
 
 		/**
 		 * Initiate all the socket related variables
@@ -140,14 +141,16 @@ public class LookupServer {
 				long lo = (long) params.get(0);
 				int guid = (int) lo;
 
-				if (anchorNodes.isEmpty()) {
-					synchronized (anchorNodes) {
-						anchorIpAddress = clientSocket.getInetAddress();
-						anchorNodes.put(guid, anchorIpAddress);
-						response = "Welcome Anchor GUID: " + guid;
-					}
+				if(anchorNodes.isEmpty()) {
+					anchorIpAddress = clientSocket.getInetAddress();
+					anchorGuid = guid;
+					response = "Welcome Anchor GUID: " + guid;
 				} else {
 					response = String.valueOf(anchorIpAddress);
+				}
+				guids.add(guid);
+				synchronized (anchorNodes) {
+					anchorNodes.put(guid, clientSocket.getInetAddress());
 				}
 				
 				break;
@@ -157,12 +160,19 @@ public class LookupServer {
 				params = (ArrayList<Object>) request.getPositionalParams();
 				guid = Integer.parseInt((String) params.get(0));
 				
-				if (anchorNodes.containsKey(guid)) {
-					
-				} else {
-					response = String.valueOf(anchorIpAddress);
+				synchronized (anchorNodes) {
+					if (anchorGuid == guid) {
+						guids.remove(guids.indexOf(anchorGuid));
+						anchorNodes.remove(anchorGuid);
+						anchorGuid = guids.get(0);
+						anchorIpAddress = anchorNodes.get(guids.get(0));
+						response = String.valueOf(anchorIpAddress);
+					} else {
+						guids.remove(guids.indexOf(guid));
+						anchorNodes.remove(guid);
+						response = String.valueOf(anchorIpAddress);
+					}
 				}
-				
 				break;
 			}
 

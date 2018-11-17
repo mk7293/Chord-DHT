@@ -1,4 +1,5 @@
 import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
@@ -11,6 +12,8 @@ public class FingerTable {
 	public int firstNode;
 	private static final int I_ENTRIES = 4;
 	private static final int MAX_NODES = 16;
+	private ArrayList<Integer> actuals = new ArrayList<>();
+	private ArrayList<Integer> successors = new ArrayList<>();
 
 	public FingerTable(int guid, TreeMap<Integer, InetAddress> activeNodes) {
 		this.guid = guid;
@@ -47,6 +50,8 @@ public class FingerTable {
 			}
 
 			sucessors.put(findNode, nextLiveNode);
+			actuals.add(findNode);
+			successors.add(nextLiveNode);
 		}
 	}
 
@@ -56,8 +61,12 @@ public class FingerTable {
 
 	public void printFingerTable() {
 		System.out.println("Actual\t\tSuccessor");
-		for (Map.Entry<Integer, Integer> entry : sucessors.entrySet()) {
-			System.out.println(entry.getKey() + "\t\t" + entry.getValue());
+//		for (Map.Entry<Integer, Integer> entry : sucessors.entrySet()) {
+//			System.out.println(entry.getKey() + "\t\t" + entry.getValue());
+//		}
+		
+		for (int i = 0; i < I_ENTRIES; i++) {
+			System.out.println(actuals.get(i) + "\t\t" + successors.get(i));
 		}
 	}
 
